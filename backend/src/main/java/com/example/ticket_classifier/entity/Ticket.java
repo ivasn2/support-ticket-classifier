@@ -18,8 +18,11 @@ public class Ticket {
     @Column(nullable = false)
     private String description;
 
+    @ManyToOne
+    @JoinColumn(name = "category_id", nullable = false) // указывает на имя колонки-внешнего ключа в таблице тикетов
+    private Category category;
+
     // тут я сделал без классификации потому что если сервис упадет, то чтобы хотя бы сохранился без классификации
-    private String category;
     private String sentiment; //перевод: тональность
     private Integer priority;
 
@@ -41,7 +44,7 @@ public class Ticket {
         return description;
     }
 
-    public String getCategory() {
+    public Category getCategory() {
         return category;
     }
 
@@ -77,7 +80,7 @@ public class Ticket {
         this.description = description;
     }
 
-    public void setCategory(String category) {
+    public void setCategory(Category category) {
         this.category = category;
     }
 

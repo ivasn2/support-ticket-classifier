@@ -1,0 +1,209 @@
+openapi: 3.0.3
+info:
+  title: Support Ticket Classifier API
+  description: |
+    API Бэкенда на Java + Spring Boot для автоматизации обработки обращений в службу поддержки.
+    Включает автоматическую классификацию по категориям, тональности и расчёт приоритета.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальный сервер разработки (Local Development Server)
+
+paths:
+  /tickets:
+    # 1. Создание обращения
+    post:
+      summary: Создание нового обращения
+      description: Принимает обращение от пользователя, запрашивает данные у ML-сервиса и сохраняет тикет в БД.
+      operationId: createTicket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - description
+              properties:
+                title:
+                  type: string
+                  description: Тема обращения
+                  example: "Не работает оплата в приложении"
+                description:
+                  type: string
+                  description: Подробный текст проблемы
+                  example: "Я нажал кнопку купить, деньги списались, но подписка не активировалась. Помогите!"
+                criticality:
+                  type: string
+                  description: Опциональный уровень важности, выбранный пользователем
+                  enum: [LOW, MEDIUM, HIGH]
+                  example: "HIGH"
+      responses:
+        '201':
+          description: Обращение успешно создано, классифицировано и сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          description: Некорректный запрос (пропущены обязательные поля)
+        '500':
+          description: Внутренняя ошибка сервера
+
+    # 2. Получение списка обращений
+    get:
+      summary: Получение списка обращений
+      description: Возвращает список обращений техподдержки, отсортированных по приоритету. Поддерживает фильтрацию.
+      operationId: getTickets
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Фильтр по статусу обращения
+          schema:
+            type: string
+            enum: [NEW, IN_WORK, RESOLVED]
+        - name: category
+          in: query
+          required: false
+          description: Фильтр по категории (определяется ML)
+          schema:
+            type: string
+            enum: [bug, feature, documentation]
+        - name: sentiment
+          in: query
+          required: false
+          description: Фильтр по тональности текста (определяется ML)
+          schema:
+            type: string
+            enum: [negative, neutral, positive]
+      responses:
+        '200':
+          description: Список обращений успешно получен
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ticket'
+        '500':
+          description: Внутренняя ошибка сервера
+
+  /tickets/{id}:
+    # 3. Детали конкретного обращения
+    get:
+      summary: Получение деталей конкретного обращения
+      description: Возвращает полную информацию по ID обращения для оператора техподдержки.
+      operationId: getTicketById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Уникальный числовой идентификатор тикета
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные обращения успешно получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '404':
+          description: Обращение с указанным ID не найдено
+
+  /tickets/{id}/status:
+    # 4. Частичное обновление статуса
+    patch:
+      summary: Изменение статуса обращения
+      description: Позволяет оператору техподдержки изменить статус тикета (например, взять в работу или закрыть).
+      operationId: updateTicketStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Уникальный числовой идентификатор тикета
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  description: Новый статус обращения
+                  enum: [IN_WORK, RESOLVED]
+                  example: "IN_WORK"
+      responses:
+        '200':
+          description: Статус обращения успешно обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          description: Некорректный статус передан в запросе
+        '404':
+          description: Обращение с указанным ID не найдено
+
+components:
+  schemas:
+    Ticket:
+      type: object
+      description: Полная модель обращения техподдержки в системе
+      properties:
+        id:
+          type: integer
+          description: Уникальный ID записи в БД
+          example: 42
+        title:
+          type: string
+          example: "Не работает оплата в приложении"
+        description:
+          type: string
+          example: "Я нажал кнопку купить, деньги списались..."
+        criticality:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+          nullable: true
+          example: "HIGH"
+        status:
+          type: string
+          enum: [NEW, IN_WORK, RESOLVED]
+          example: "NEW"
+        category:
+          type: string
+          enum: [bug, feature, documentation]
+          description: Выставляется автоматически ML-сервисом. Может быть null, если сервис недоступен.
+          nullable: true
+          example: "bug"
+        sentiment:
+          type: string
+          enum: [negative, neutral, positive]
+          description: Выставляется автоматически ML-сервисом. Может быть null, если сервис недоступен.
+          nullable: true
+          example: "negative"
+        priority:
+          type: integer
+          description: Числовой приоритет (чем выше число, тем срочнее тикет)
+          minimum: 1
+          maximum: 3
+          example: 3
+        createdAt:
+          type: string
+          format: date-time
+          description: Дата и время автоматического создания тикета
+          example: "2026-10-28T13:26:00Z"
+        answeredAt:
+          type: string
+          format: date-time
+          description: Дата и время закрытия тикета или ответа оператора
+          nullable: true
+          example: "2026-10-28T14:10:00Z"

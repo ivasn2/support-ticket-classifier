@@ -19,7 +19,7 @@ public class Ticket {
     private String description;
 
     @ManyToOne
-    @JoinColumn(name = "category_id", nullable = false) // указывает на имя колонки-внешнего ключа в таблице тикетов
+    @JoinColumn(name = "category_id") // указывает на имя колонки-внешнего ключа в таблице тикетов
     private Category category;
 
     // тут я сделал без классификации потому что если сервис упадет, то чтобы хотя бы сохранился без классификации

@@ -17,9 +17,9 @@ pd.set_option("display.colheader_justify", "left")
 X = df['translated_text']
 y = df['true_category']
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-vectors = TfidfVectorizer(max_features=5000, lowercase=True)
+vectors = TfidfVectorizer(ngram_range=(1,2), sublinear_tf=True, min_df=2)
 
 X_train_tfidf = vectors.fit_transform(X_train)
 
@@ -29,7 +29,7 @@ model = LogisticRegression()
 
 param_grid = {
     'C':[0.01, 0.1, 1, 10, 100],
-    'class_weight': ['balanced']
+    'class_weight': [None, 'balanced']
 }
 
 grid_search = GridSearchCV (
@@ -51,6 +51,6 @@ print(accuracy_score(y_test, prediction) * 100)
 print(grid_search.best_params_)
 print(classification_report(y_test, prediction))
 print(cm)
-print(df['true_sentiment'].value_counts(normalize=True) * 100)
-# print(df[['true_priority', 'true_category', 'true_sentiment']].head())
+print(df['sentiment'].value_counts(normalize=True) * 100)
+# print(df[['true_priority', 'true_category', 'sentiment']].head())
 

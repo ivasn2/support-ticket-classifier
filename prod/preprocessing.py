@@ -1,84 +1,155 @@
-import pandas as pd
 import re
+import time
+import pandas as pd
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Очистка текста
-def clean_text(text):
+SOURCE = "old_dataset.csv"
+TARGET = "prepared_dataset.csv"
+MODEL_NAME = "cointegrated/rubert-tiny-sentiment-balanced"
+
+# ОЧИСТКА
+FENCE = "`" * 3
+RE_COMMENT      = re.compile(r"<!-{1,2}.*?-{1,2}!?>", re.S)
+RE_COMMENT_OLD  = re.compile(r"<![^>]{0,3000}>")
+RE_CODE_FENCE   = re.compile(FENCE + r".*?" + FENCE, re.S)
+RE_CODE_INLINE  = re.compile(r"`[^`\n]{1,300}`")
+RE_MD_IMAGE     = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+RE_MD_IMAGE_BAD = re.compile(r"!\[[^\]]*\]\(")
+RE_MD_LINK      = re.compile(r"\[([^\]\n]{0,120})\]\([^)]*\)")
+RE_MD_LINK_BAD  = re.compile(r"\[([^\]\n]{0,120})\]\(")
+RE_HTML_TAG     = re.compile(r"</?[a-zA-Z][^>]{0,200}>")
+RE_URL          = re.compile(r"https?://\S+|www\.\S+")
+RE_PLACEHOLDER  = re.compile(r"_No response_|_Нет ответа_|\bN/A\b|Н/Д")
+RE_CHECKLIST    = re.compile(r"-\s*\[[ Xx]\][^\n]{0,200}")
+RE_TEMPLATE     = re.compile(r"ТЕМА:|\|\s*ОПИСАНИЕ:")
+RE_DECOR        = re.compile(r"[-#*]{2,}")
+RE_WS           = re.compile(r"\s+")
+
+
+def clean_text(text, strip_code=True):
+    """strip_code=True  -> для тональности (код = шум)
+       strip_code=False -> для категории (в коде имена API = сигнал)"""
     if not isinstance(text, str):
-        return text
+        return ""
 
-    url = r"https?://\S+|www\.\S+"
+    # комментарии вырезаем ДО удаления дефисов, иначе '--' съедается
+    text = RE_COMMENT.sub(" ", text)
+    text = RE_COMMENT_OLD.sub(" ", text)
 
-    text = re.sub(url, "", text)
+    if strip_code:
+        text = RE_CODE_FENCE.sub(" ", text)
+        text = RE_CODE_INLINE.sub(" ", text)
 
-    text = re.sub(r"[\r\n]+", " ", text)
+    text = RE_MD_IMAGE.sub(" ", text)
+    text = RE_MD_IMAGE_BAD.sub(" ", text)
+    text = RE_MD_LINK.sub(r"\1", text)
+    text = RE_MD_LINK_BAD.sub(r"\1", text)
 
-    text = re.sub(r"[-#]{2,}", " ", text)
+    text = RE_HTML_TAG.sub(" ", text)
+    text = RE_URL.sub(" ", text)
 
-    text = re.sub(r"\s+", " ", text)
+    text = RE_PLACEHOLDER.sub(" ", text)
+    text = RE_CHECKLIST.sub(" ", text)
+    text = RE_TEMPLATE.sub(" ", text)
 
+    text = RE_DECOR.sub(" ", text)
+    text = text.replace("|", " ")
+    text = RE_WS.sub(" ", text)
     return text.strip()
 
-def compound_sentiment(text):
-    compound = analyzer.polarity_scores(text)['compound']
-    if compound >= 0.05:
-        return "Позитивная"
-    elif compound <= -0.05:
-        return "Негативная"
-    else:
+
+# ТОНАЛЬНОСТЬ: ruBERT
+EN2RU = {"negative": "Негативная", "neutral": "Нейтральная", "positive": "Позитивная"}
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME).to(device)
+model.eval()
+
+# порядок меток берём из конфига, а не из карточки модели
+ID2LABEL = {int(k): str(v).lower() for k, v in model.config.id2label.items()}
+print("id2label:", ID2LABEL, "| device:", device)
+
+
+@torch.no_grad()
+def predict_sentiment(texts, batch_size=32, max_length=512):
+    out = []
+    t0 = time.time()
+    for start in range(0, len(texts), batch_size):
+        batch = [t if t else "пусто" for t in texts[start:start + batch_size]]
+        enc = tokenizer(batch, padding=True, truncation=True,
+                        max_length=max_length, return_tensors="pt").to(device)
+        idx = model(**enc).logits.argmax(dim=-1).tolist()
+        out.extend(EN2RU[ID2LABEL[i]] for i in idx)
+        if (start // batch_size) % 20 == 0:
+            print(f"  {start + len(batch)}/{len(texts)}  {time.time() - t0:.1f}s")
+    print(f"  готово за {time.time() - t0:.1f}s")
+    return out
+
+
+# ТОНАЛЬНОСТЬ: VADER (для сравнения)
+vader = SentimentIntensityAnalyzer()
+
+
+def vader_sentiment(text):
+    if not isinstance(text, str) or not text:
         return "Нейтральная"
+    c = vader.polarity_scores(text)["compound"]
+    if c >= 0.05:
+        return "Позитивная"
+    if c <= -0.05:
+        return "Негативная"
+    return "Нейтральная"
 
-df = pd.read_json("../Old/dataset_for_classification.json")
-df['translated_text'] = df['translated_text'].str.replace("ТЕМА: ", "")
-df['translated_text'] = df['translated_text'].str.replace(r"| ОПИСАНИЕ: ", "", regex=False)
-df['translated_text'] = df['translated_text'].str.replace("|", " ")
-df['translated_text'] = df['translated_text'].apply(clean_text)
 
-df['original_text'] = df['original_text'].str.replace("ТЕМА: ", "")
-df['original_text'] = df['original_text'].str.replace(r"| ОПИСАНИЕ: ", "", regex=False)
-df['original_text'] = df['original_text'].str.replace("|", " ")
-df['original_text'] = df['original_text'].apply(clean_text)
-
-analyzer = SentimentIntensityAnalyzer()
-df['true_sentiment'] = df['original_text'].apply(compound_sentiment)
-
+# ПРИОРИТЕТ
 priority_rules = {
-    "Баг": {
-        "Негативная": "Критический",
-        "default": "Высокий"
-    },
-    "Документация": {
-        "Негативная": "Высокий",
-        "default": "Средний"
-    },
-    "Новая функция": {"default": "Низкий"}
+    "Баг":           {"Негативная": "Критический", "default": "Высокий"},
+    "Документация":  {"Негативная": "Высокий",     "default": "Средний"},
+    "Новая функция": {"default": "Низкий"},
 }
 
-def calculate_priority(row):
-    category = row['true_category']
-    sentiment = row['true_sentiment']
 
-    category_dict = priority_rules.get(category)
-    priority = category_dict.get(sentiment, category_dict.get("default"))
-    return priority
+def calculate_priority(category, sentiment):
+    rules = priority_rules.get(category)
+    if rules is None:
+        raise ValueError(f"нет правила для категории: {category!r}")
+    return rules.get(sentiment, rules["default"])
 
-df['true_priority'] = df.apply(calculate_priority, axis=1)
 
-# 1. Фильтруем одной маской, 2. берём нужные колонки и 3. первые 10 строк
-sample = df.loc[
-    (df['true_category'] == 'Баг') & (df['true_sentiment'] == 'Позитивная'),
-    ['translated_text', 'original_text']
-].head(10)
+# ПАЙПЛАЙН
+df = pd.read_csv(SOURCE)
+print("загружено:", len(df), "строк из", SOURCE)
 
-# 4. Проходимся по строкам и печатаем читаемо
-for idx, row in sample.iterrows():
-    # 5. Считаем compound (обычно VADER натравливают на английский текст — поменяйте колонку, если нужно)
-    compound = analyzer.polarity_scores(str(row['original_text']))['compound']
+df["text_sentiment"] = df["translated_text"].apply(lambda t: clean_text(t, strip_code=True))
+df["translated_text"] = df["translated_text"].apply(lambda t: clean_text(t, strip_code=False))
+df["original_text"] = df["original_text"].apply(lambda t: clean_text(t, strip_code=False))
 
-    print(f"ID: {idx} | Compound: {compound:.3f}")
-    print(f"Перевод:  {row['translated_text']}")
-    print(f"Оригинал: {row['original_text']}")
-    print("-" * 60)
+print("\nruBERT по русскому тексту:")
+df["sentiment"] = predict_sentiment(df["text_sentiment"].tolist())
 
-df.to_csv("prepared_dataset.csv", index=False, encoding="utf-8")
+print("\nVADER по английскому оригиналу:")
+df["sentiment_vader"] = df["original_text"].apply(vader_sentiment)
 
+df["true_priority"] = [
+    calculate_priority(c, s) for c, s in zip(df["true_category"], df["sentiment"])
+]
+
+# ПРОВЕРКИ
+print("\n=== тональность ruBERT, % ===")
+print((df["sentiment"].value_counts(normalize=True) * 100).round(1))
+print("\n=== тональность VADER, % ===")
+print((df["sentiment_vader"].value_counts(normalize=True) * 100).round(1))
+print("\n=== согласны между собой, % ===")
+print(round((df["sentiment"] == df["sentiment_vader"]).mean() * 100, 1))
+print("\n=== категория x тональность (ruBERT) ===")
+print(pd.crosstab(df["true_category"], df["sentiment"]))
+print("\n=== приоритеты, % ===")
+print((df["true_priority"].value_counts(normalize=True) * 100).round(1))
+print("\n=== длины текста ===")
+print(df[["translated_text", "text_sentiment"]].apply(lambda s: s.str.len().mean()).round(0))
+
+df.to_csv(TARGET, index=False, encoding="utf-8")
+print("\nсохранено:", TARGET, "| колонки:", df.columns.tolist())

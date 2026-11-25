@@ -4,6 +4,7 @@ import com.example.ticket_classifier.dto.CreateTicketRequest;
 import com.example.ticket_classifier.entity.Ticket;
 import com.example.ticket_classifier.entity.TicketStatus;
 import com.example.ticket_classifier.repository.TicketRepository;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,8 +29,12 @@ public class TicketService {
         return ticketRepository.save(ticket);
     }
 
-    public List<Ticket> getAll() {
-        return ticketRepository.findAll();
+    public List<Ticket> getAll(TicketStatus status) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "priority");
+        if (status == null) {
+            return ticketRepository.findAll(sort);
+        }
+        return ticketRepository.findByStatus(status, sort);
     }
 
     public Ticket getById(Long id) {

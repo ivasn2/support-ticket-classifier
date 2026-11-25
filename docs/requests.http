@@ -24,3 +24,6 @@ Content-Type: application/json
 
 ### Несуществующий тикет (ждём 404)
 GET http://localhost:8080/tickets/999
+
+### Только в работе
+GET http://localhost:8080/tickets?status=IN_WORK

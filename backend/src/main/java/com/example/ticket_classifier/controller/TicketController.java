@@ -3,6 +3,7 @@ package com.example.ticket_classifier.controller;
 import com.example.ticket_classifier.dto.CreateTicketRequest;
 import com.example.ticket_classifier.dto.UpdateTicketStatusRequest;
 import com.example.ticket_classifier.entity.Ticket;
+import com.example.ticket_classifier.entity.TicketStatus;
 import com.example.ticket_classifier.service.TicketService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -26,8 +27,8 @@ public class TicketController {
     }
 
     @GetMapping
-    public List<Ticket> getAll() {
-        return ticketService.getAll();
+    public List<Ticket> getAll(@RequestParam(required = false) TicketStatus status) {
+        return ticketService.getAll(status);
     }
 
     @GetMapping("/{id}")

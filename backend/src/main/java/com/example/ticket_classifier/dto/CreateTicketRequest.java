@@ -3,7 +3,7 @@ package com.example.ticket_classifier.dto;
 public class CreateTicketRequest {
     private String title;
     private String description;
-    private String criticality;
+    private CriticalityStatus criticality;
 
     public String getTitle() {
         return title;
@@ -13,11 +13,11 @@ public class CreateTicketRequest {
         return description;
     }
 
-    public String getCriticality() {
+    public CriticalityStatus getCriticality() {
         return criticality;
     }
 
-    public void setCriticality(String criticality) {
+    public void setCriticality(CriticalityStatus criticality) {
         this.criticality = criticality;
     }
 

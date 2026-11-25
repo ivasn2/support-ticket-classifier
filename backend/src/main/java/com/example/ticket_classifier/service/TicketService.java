@@ -5,6 +5,8 @@ import com.example.ticket_classifier.entity.Ticket;
 import com.example.ticket_classifier.repository.TicketRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class TicketService {
 
@@ -22,4 +24,7 @@ public class TicketService {
         return ticketRepository.save(ticket);
     }
 
+    public List<Ticket> getAll() {
+        return ticketRepository.findAll();
+    }
 }

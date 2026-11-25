@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
 
 df = pd.read_csv("prepared_dataset.csv")
 
@@ -42,7 +43,14 @@ grid_search = GridSearchCV (
 grid_search.fit(X_train_tfidf, y_train)
 
 prediction = grid_search.predict(X_test_tfidf)
+cm = confusion_matrix(y_test, prediction)
+
+
 
 print(accuracy_score(y_test, prediction) * 100)
 print(grid_search.best_params_)
 print(classification_report(y_test, prediction))
+print(cm)
+print(df['true_sentiment'].value_counts(normalize=True) * 100)
+# print(df[['true_priority', 'true_category', 'true_sentiment']].head())
+
